@@ -136,12 +136,10 @@ def md_to_html(src: str) -> str:
         if in_ul:
             out.append("</ul>")
             in_ul = False
-        if t.startswith("### "):
-            out.append("<h3>" + _inline(t[4:]) + "</h3>")
-        elif t.startswith("## "):
-            out.append("<h2>" + _inline(t[3:]) + "</h2>")
-        elif t.startswith("# "):
-            out.append("<h1>" + _inline(t[2:]) + "</h1>")
+        m = re.match(r"^(#{1,6})\s+(.*)$", t)
+        if m:
+            lv = len(m.group(1))
+            out.append(f"<h{lv}>" + _inline(m.group(2)) + f"</h{lv}>")
         elif t.startswith(">"):
             out.append("<blockquote>" + _inline(t.lstrip("> ")) + "</blockquote>")
         elif t == "":

@@ -28,6 +28,7 @@ class Job:
         self.id = jid
         self.media_path = media_path
         self.title = params.get("title") or Path(media_path).stem
+        self.category = (params.get("category") or "").strip()
         self.params = params
         self.out_dir = out_dir
         self.status = "queued"          # queued/running/done/error/cancelled
@@ -45,7 +46,7 @@ class Job:
 
     def to_dict(self, brief=False):
         d = {
-            "id": self.id, "title": self.title, "media_path": self.media_path,
+            "id": self.id, "title": self.title, "category": self.category, "media_path": self.media_path,
             "status": self.status, "stage": self.stage, "stage_label": STAGE_LABEL.get(self.stage, self.stage),
             "progress": round(self.progress, 4),
             "eta": round(self.eta) if self.status == "running" and self.eta > 0 else 0, "error": self.error,
@@ -112,6 +113,8 @@ class JobManager:
                 j.finished = it.get("finished", 0)
                 self.jobs[j.id] = j
                 self.order.append(j.id)
+            # 统一按创建时间倒序（新任务在前），避免 tasks.json 写读顺序翻转
+            self.order.sort(key=lambda jid: self.jobs[jid].created, reverse=True)
         except Exception as e:
             print(f"[jobs] 读取 tasks.json 失败: {e}")
 
@@ -131,6 +134,23 @@ class JobManager:
             print(f"[jobs] 写 tasks.json 失败: {e}")
 
     # -------------------------------------------------------- 创建/查询 --
+    def set_meta(self, jid: str, title: str | None = None, category: str | None = None) -> Job | None:
+        """重命名/设置分类；入参为 None 表示不修改。同步进 params 以持久化。"""
+        j = self.jobs.get(jid)
+        if not j:
+            return None
+        if title is not None:
+            t = title.strip()
+            if t:
+                j.title = t
+                j.params["title"] = t
+        if category is not None:
+            c = category.strip()[:20]   # 分类名限 20 字符
+            j.category = c
+            j.params["category"] = c
+        self.persist()
+        return j
+
     def create(self, media_path: str, params: dict) -> Job:
         jid = time.strftime("%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:5]
         out_dir = cfgmod.outputs_dir(self.cfg) / jid
@@ -139,7 +159,7 @@ class JobManager:
         j = Job(jid, media_path, params, out_dir)
         with self._lock:
             self.jobs[jid] = j
-            self.order.append(jid)
+            self.order.insert(0, jid)   # 新任务置顶（order 恒为最新在前）
         j.thread = threading.Thread(target=self._run, args=(j,), daemon=True,
                                     name=f"job-{jid}")
         j.thread.start()
@@ -150,7 +170,8 @@ class JobManager:
         return self.jobs.get(jid)
 
     def list(self) -> list[dict]:
-        return [self.jobs[j].to_dict(brief=True) for j in reversed(self.order) if j in self.jobs]
+        # self.order 恒定按创建时间倒序（新任务在前），此处不再翻转
+        return [self.jobs[j].to_dict(brief=True) for j in self.order if j in self.jobs]
 
     # ---------------------------------------------------- 取消/继续/删除 --
     def cancel(self, jid: str) -> bool:
@@ -161,11 +182,28 @@ class JobManager:
             return True
         return False
 
-    def resume(self, jid: str) -> bool:
+    def resume(self, jid: str, params: dict | None = None) -> bool:
         """从断点继续（重新跑管线，已有中间产物自动跳过）。
-        done 的任务也可重新总结：转写/分块摘要走缓存，仅重新生成最终总结。"""
+        done 的任务也可重新总结：转写/分块摘要走缓存，仅重新生成最终总结。
+        params 可携带 style / extra_request / language 覆盖原设置；
+        风格或附加要求变化时清空分块摘要缓存（其提示词依赖这两者）。"""
         j = self.jobs.get(jid)
         if j and j.status in ("error", "cancelled", "done"):
+            if params:
+                old_style = j.params.get("style")
+                old_extra = (j.params.get("extra_request") or "").strip()
+                for k in ("language", "style", "extra_request"):
+                    if params.get(k) is not None:
+                        j.params[k] = str(params[k]).strip()
+                new_style = j.params.get("style")
+                new_extra = (j.params.get("extra_request") or "").strip()
+                if (j.out_dir / "blocks").exists() and (old_style != new_style or old_extra != new_extra):
+                    import shutil
+                    shutil.rmtree(j.out_dir / "blocks", ignore_errors=True)
+                    j.log("总结设置已更改：分块摘要缓存已失效，将按新要求重新分块总结")
+                if (j.params.get("extra_request") or "").strip():
+                    j.log(f"重新总结，附加要求：{j.params['extra_request'].strip()[:80]}"
+                          + ("…" if len(j.params["extra_request"].strip()) > 80 else ""))
             j.status = "queued"
             j.stage = "queued"
             j.error = ""

@@ -198,7 +198,8 @@ class Handler(BaseHTTPRequestHandler):
             body = render_md_to_html(src)
             css = ("body{background:#fff;color:#111;font:14px/1.6 -apple-system,'PingFang SC',sans-serif;"
                    "max-width:900px;margin:30px auto;padding:0 20px}"
-                   "h1,h2,h3{margin:14px 0 8px}h2{font-size:16px}h3{font-size:14px;color:#0b7ec2}"
+                   "h1,h2,h3,h4,h5,h6{margin:14px 0 8px}h2{font-size:16px}h3{font-size:14px;color:#0b7ec2}"
+                   "h4,h5,h6{font-size:13.5px;color:#5a6472}"
                    "p{margin:6px 0}ul{margin:6px 0 6px 20px}li{margin:3px 0}"
                    ".ts{color:#0ea36b;font-family:monospace;font-size:12px;font-weight:600}"
                    ".mathwrap.inline{display:inline-block;vertical-align:middle;margin:0 1px}"
@@ -283,9 +284,20 @@ class Handler(BaseHTTPRequestHandler):
                     d["events"] = evs
                     d["next"] = nxt
                     return self._json(d)
+                if action == "resume" and method == "POST":
+                    body = self._body()
+                    patch = {k: body[k] for k in ("language", "style", "extra_request") if k in body}
+                    ok = MGR.resume(jid, patch or None)
+                    return self._json({"ok": ok})
                 if method == "POST" and action in ("cancel", "resume", "delete"):
                     ok = getattr(MGR, action)(jid)
                     return self._json({"ok": ok})
+                if action == "meta" and method == "POST":
+                    body = self._body()
+                    j2 = MGR.set_meta(jid, body.get("title"), body.get("category"))
+                    if not j2:
+                        return self._json({"error": "任务不存在"}, 404)
+                    return self._json({"job": j2.to_dict(brief=True)})
                 if action == "result" and method == "GET":
                     name = q.get("name", "summary.md")
                     if name not in SAFE_RESULT_FILES:

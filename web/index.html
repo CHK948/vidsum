@@ -86,9 +86,10 @@ main{display:grid;grid-template-columns:360px 1fr;gap:16px;padding:16px 20px;max
 .restool button.active{background:var(--acc-soft);border-color:var(--acc);color:#0b7d54;font-weight:600}
 .res{background:var(--card);border:1px solid var(--line);border-top:none;border-radius:0 0 10px 10px;padding:16px;max-height:540px;overflow:auto}
 .res.pre{font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;word-break:break-all;color:#3d4a57}
-.res .md h1,.res .md h2,.res .md h3{margin:14px 0 8px;color:var(--fg)}
+.res .md h1,.res .md h2,.res .md h3,.res .md h4,.res .md h5,.res .md h6{margin:14px 0 8px;color:var(--fg)}
 .res .md h1{font-size:18px;border-bottom:1px solid var(--line);padding-bottom:6px}
 .res .md h2{font-size:16px}.res .md h3{font-size:14px;color:var(--acc2)}
+.res .md h4,.res .md h5,.res .md h6{font-size:13.5px;color:var(--fg2);margin:10px 0 6px}
 .res .md p{margin:6px 0}
 .res .md ul{margin:6px 0 6px 20px}
 .res .md li{margin:3px 0}
@@ -148,6 +149,16 @@ main{display:grid;grid-template-columns:360px 1fr;gap:16px;padding:16px 20px;max
 @media(max-width:640px){.formgrid{grid-template-columns:1fr}}
 .testout{font-family:var(--mono);font-size:12px;margin-top:8px;white-space:pre-wrap}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--acc);color:var(--fg);border-radius:8px;padding:8px 18px;z-index:99;display:none;box-shadow:var(--shadow)}
+.chip{display:inline-block;padding:1px 8px;border-radius:9px;font-size:11px;line-height:15px;cursor:pointer;flex-shrink:0;white-space:nowrap}
+.catbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.catbar div{padding:3px 12px;border-radius:12px;font-size:12px;cursor:pointer;background:var(--bg3);color:var(--fg2);border:1px solid transparent}
+.catbar div:hover{border-color:var(--line)}
+.catbar div.on{background:var(--acc-soft);color:#0b7d54;font-weight:600}
+#catMenu{position:fixed;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:5px;z-index:70;display:none;min-width:150px;max-height:320px;overflow:auto}
+#catMenu div{padding:6px 10px;border-radius:6px;cursor:pointer;font-size:13px}
+#catMenu div:hover{background:var(--bg3)}
+#catMenu .hd{font-size:11px;color:var(--fg3);cursor:default;padding:4px 10px 2px}
+#catMenu .hd:hover{background:none}
 .empty{text-align:center;color:var(--fg3);padding:40px 0}
 </style>
 </head>
@@ -195,12 +206,13 @@ main{display:grid;grid-template-columns:360px 1fr;gap:16px;padding:16px 20px;max
     </div>
     <div class="card">
       <h2>任务列表</h2>
+      <div id="catBar" class="catbar" style="display:none"></div>
       <div id="jobList"></div>
     </div>
   </section>
 
   <section id="detail" class="card" style="display:none">
-    <div class="head"><h2 id="dTitle"></h2><span id="dStatus" class="st"></span></div>
+    <div class="head"><h2 id="dTitle" style="cursor:text" title="双击重命名" ondblclick="renameJob(CUR, currentTitle())"></h2><span id="dCat" class="chip" onclick="openCatMenu(event,CUR)"></span><span id="dStatus" class="st"></span></div>
     <div class="path" id="dPath"></div>
     <div class="progwrap">
       <div class="progbar"><i id="dBar"></i></div>
@@ -211,7 +223,7 @@ main{display:grid;grid-template-columns:360px 1fr;gap:16px;padding:16px 20px;max
     <div id="asrLive"><span class="dot"></span><span class="speed" id="asrSpeed"></span><span class="last" id="asrText"></span></div>
     <div style="display:flex;gap:8px;margin:10px 0">
       <button id="btnCancel" onclick="jobAction('cancel')">■ 取消</button>
-      <button id="btnResume" onclick="jobAction('resume')" style="display:none">↻ 从断点继续</button>
+      <button id="btnResume" onclick="onResumeClick()" style="display:none">↻ 从断点继续</button>
       <button class="danger" id="btnDelete" onclick="deleteJob()">🗑 删除任务</button>
       <span class="hint" style="margin-left:auto;align-self:center" id="dMeta"></span>
     </div>
@@ -295,7 +307,7 @@ main{display:grid;grid-template-columns:360px 1fr;gap:16px;padding:16px 20px;max
 
 <script>
 const $=id=>document.getElementById(id);
-let CFG=null, SYS=null, JOBS=[], CUR=null, evNext=0, resCache={}, pollT=null, resView='render', curRes=null;
+let CFG=null, SYS=null, JOBS=[], CUR=null, evNext=0, resCache={}, pollT=null, resView='render', curRes=null, jobFilter='';
 
 async function api(path, opts){
   const r=await fetch(path,opts);
@@ -438,6 +450,46 @@ function pickFile(){ if(browseSel){ $('mediaPath').value=browseSel; closeModal('
 function closeModal(id){$(id).classList.remove('open')}
 
 /* ---------------- jobs ---------------- */
+function catColor(name){
+  if(!name) return {bg:'#eef0f3',fg:'#7a8494'};
+  let h=0; for(const c of name) h=(h*31+c.codePointAt(0))>>>0;
+  const hue=h%360;
+  return {bg:`hsl(${hue} 75% 90%)`, fg:`hsl(${hue} 55% 30%)`};
+}
+function currentTitle(){ const j=JOBS.find(x=>x.id===CUR); return j?j.title:'' }
+async function metaSave(jid,patch){
+  try{
+    await api(`/api/jobs/${jid}/meta`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});
+    await refreshJobs();
+    if(CUR===jid) pollDetail();
+    toast('已更新');
+  }catch(e){toast(e.message,false)}
+}
+function renameJob(jid,cur){
+  const v=prompt('重命名任务：', cur||currentTitle());
+  if(v===null)return; const t=v.trim(); if(!t)return;
+  metaSave(jid,{title:t});
+}
+function openCatMenu(ev,jid){
+  ev.stopPropagation();
+  const m=$('catMenu'); m.innerHTML='';
+  const hd=document.createElement('div'); hd.className='hd'; hd.textContent='设置分类'; m.appendChild(hd);
+  const seen=new Set();
+  for(const j of JOBS){ const c=(j.category||'').trim(); if(c&&!seen.has(c)){seen.add(c);
+    const d=document.createElement('div'); d.textContent=c;
+    const cc=catColor(c); d.style.borderLeft=`3px solid ${cc.fg}`;
+    d.onclick=()=>{m.style.display='none';metaSave(jid,{category:c})}; m.appendChild(d); } }
+  const add=document.createElement('div'); add.textContent='＋ 新建分类…';
+  add.onclick=()=>{m.style.display='none'; const v=prompt('分类名称（限20字）：'); if(v===null)return;
+    const c=v.trim().slice(0,20); metaSave(jid,{category:c})}; m.appendChild(add);
+  const j=JOBS.find(x=>x.id===jid);
+  if(j&&j.category){ const rm=document.createElement('div'); rm.textContent='✕ 移出分类';
+    rm.onclick=()=>{m.style.display='none';metaSave(jid,{category:''})}; m.appendChild(rm); }
+  m.style.left=Math.min(ev.clientX,innerWidth-170)+'px';
+  m.style.top=Math.min(ev.clientY+6,innerHeight-220)+'px';
+  m.style.display='block';
+}
+document.addEventListener('click',()=>{const m=$('catMenu'); if(m) m.style.display='none'});
 async function startJob(){
   const p=$('mediaPath').value.trim();
   if(!p) return toast('请先选择音视频文件',false);
@@ -461,17 +513,36 @@ function weight(st,p){ // 各阶段 -> 总进度
 async function refreshJobs(){
   try{
     const r=await api('/api/jobs'); JOBS=r.jobs;
+    // 分类过滤栏
+    const bar=$('catBar');
+    const cats=new Map(); for(const j of JOBS){const c=j.category||''; cats.set(c,(cats.get(c)||0)+1)}
+    const hasCat=[...cats.keys()].some(c=>c);
+    if(hasCat||jobFilter){
+      bar.style.display='flex'; bar.innerHTML='';
+      const mk=(val,label,n)=>{const d=document.createElement('div');d.textContent=label+(n!=null?' '+n:'');
+        if(jobFilter===val)d.classList.add('on');
+        d.onclick=()=>{jobFilter=val;refreshJobs()};bar.appendChild(d)};
+      mk('','全部',JOBS.length);
+      for(const [c,n] of cats){ if(c) mk(c,c,n) }
+      if(cats.get('')) mk('__none__','未分类',cats.get(''));
+    } else bar.style.display='none';
+    // 任务卡片（按分类过滤）
+    const shown = jobFilter==='' ? JOBS : (jobFilter==='__none__' ? JOBS.filter(j=>!j.category) : JOBS.filter(j=>j.category===jobFilter));
     const box=$('jobList');
-    if(!JOBS.length){box.innerHTML='<div class="empty">暂无任务<br><span class="hint">选择一个视频开始吧</span></div>';return}
+    if(!shown.length){box.innerHTML='<div class="empty">'+(jobFilter?'该分类下暂无任务':'暂无任务<br><span class="hint">选择一个视频开始吧</span>')+'</div>';return}
     box.innerHTML='';
-    for(const j of JOBS){
+    for(const j of shown){
       const el=document.createElement('div');el.className='jitem'+(CUR===j.id?' active':'');
       const pct=Math.round(weight(j.stage,j.progress)*100);
       const eta=(j.status==='running'&&j.eta>0)?('剩 '+fmtRemain(j.eta)):'';
-      el.innerHTML=`<div class="t">${esc(j.title)}</div>
-        <div class="m"><span class="st ${j.stage}">${j.stage_label}</span><span>${fmtTime(j.created)}</span><span style="margin-left:auto">${j.status==='done'?'✓':(eta||pct+'%')}</span></div>
+      el.innerHTML=`<div class="t" title="双击重命名">${esc(j.title)}</div>
+        <div class="m"><span class="chip" title="点击设置分类">${esc(j.category||'未分类')}</span><span class="st ${j.stage}">${j.stage_label}</span><span>${fmtTime(j.created)}</span><span style="margin-left:auto">${j.status==='done'?'✓':(eta||pct+'%')}</span></div>
         <div class="minibar"><i style="width:${j.status==='done'?100:pct}%"></i></div>`;
-      el.onclick=()=>selectJob(j.id);
+      const chip=el.querySelector('.chip'); const cc=catColor(j.category);
+      chip.style.background=cc.bg; chip.style.color=cc.fg;
+      chip.onclick=(ev)=>{ev.stopPropagation();openCatMenu(ev,j.id)};
+      el.ondblclick=(ev)=>{if(ev.target===chip)return;renameJob(j.id,j.title)};
+      el.onclick=(ev)=>{if(ev.target===chip)return;selectJob(j.id)};
       box.appendChild(el);
     }
     if(CUR&&JOBS.some(j=>j.id===CUR)) updateMeta();
@@ -509,6 +580,8 @@ async function pollDetail(){
     }
     evNext=j.next||evNext;
     $('dTitle').textContent=j.title; $('dPath').textContent=j.media_path;
+    const dc=$('dCat'); dc.textContent=j.category||'未分类';
+    const cc=catColor(j.category); dc.style.background=cc.bg; dc.style.color=cc.fg;
     const st=$('dStatus'); st.textContent=j.stage_label; st.className='st '+j.stage;
     const pct=Math.round(weight(j.stage,j.progress)*100);
     $('dBar').style.width=(j.status==='done'?100:pct)+'%';
@@ -524,7 +597,7 @@ async function pollDetail(){
     $('btnCancel').style.display=(j.status==='running'||j.status==='queued')?'':'none';
     const canResume=(j.status==='error'||j.status==='cancelled'||j.status==='done');
     $('btnResume').style.display=canResume?'':'none';
-    $('btnResume').textContent=(j.status==='done')?'↻ 重新总结（用当前设置）':'↻ 从断点继续';
+    $('btnResume').textContent=(j.status==='done')?'↻ 重新总结（可调整要求）':'↻ 从断点继续';
     for(const [n,ok] of Object.entries(j.files||{})){
       const b=$('tab-'+n); if(b) b.disabled=!ok;
     }
@@ -595,6 +668,23 @@ async function jobAction(act){
   try{await api(`/api/jobs/${CUR}/${act}`,{method:'POST'});toast(act==='cancel'?'已请求取消':'已从断点恢复');refreshJobs()}
   catch(e){toast(e.message,false)}
 }
+function onResumeClick(){
+  const j=JOBS.find(x=>x.id===CUR); if(!j)return;
+  if(j.status==='done'){
+    $('rsStyle').value=(j.params&&j.params.style)||'course';
+    $('rsExtra').value=(j.params&&j.params.extra_request)||'';
+    $('mRespec').classList.add('open');
+  }else jobAction('resume');
+}
+function confirmRespec(){
+  if(!CUR)return;
+  const style=$('rsStyle').value, extra=$('rsExtra').value.trim();
+  closeModal('mRespec');
+  api(`/api/jobs/${CUR}/resume`,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({style,extra_request:extra})})
+    .then(()=>{toast('已按新要求开始重新总结');refreshJobs();pollDetail()})
+    .catch(e=>toast(e.message,false));
+}
 async function deleteJob(){
   if(!CUR||!confirm('删除任务及其所有输出文件？'))return;
   try{await api(`/api/jobs/${CUR}/delete`,{method:'POST'});CUR=null;$('detail').style.display='none';refreshJobs();toast('已删除')}
@@ -607,5 +697,29 @@ refreshJobs().then(()=>{ if(JOBS.length&&!CUR) selectJob(JOBS[0].id); });
 setInterval(refreshJobs,2500);
 setInterval(loadSys,30000);
 </script>
+<!-- 重新总结·调整要求 -->
+<div class="modal" id="mRespec">
+  <div class="mbox" style="width:min(560px,94vw)">
+    <header2><span>重新总结 · 调整要求</span><button onclick="closeModal('mRespec')">✕</button></header2>
+    <div class="mbody">
+      <label>总结风格</label>
+      <select id="rsStyle">
+        <option value="course">课程笔记</option>
+        <option value="general">内容总结</option>
+        <option value="meeting">会议纪要</option>
+        <option value="lecture_tech">技术讲座</option>
+      </select>
+      <label style="margin-top:12px">附加要求（完整注入总结提示词）</label>
+      <textarea id="rsExtra" rows="5" placeholder="例如：只关注证明思路；多用要点；面向本科生；列出所有公式并解释…" spellcheck="false"></textarea>
+      <div class="hint" style="margin-top:8px">转写不会重跑；风格或附加要求有改动时，分块摘要会按新要求重新生成（首次约数分钟）。</div>
+    </div>
+    <div class="mfoot">
+      <button onclick="closeModal('mRespec')">取消</button>
+      <button class="primary" onclick="confirmRespec()">▶ 开始重新总结</button>
+    </div>
+  </div>
+</div>
+
+<div id="catMenu"></div>
 </body>
 </html>

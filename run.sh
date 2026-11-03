@@ -28,8 +28,9 @@ if [ -n "$SP" ] && [ -d "$SP/nvidia" ]; then
   fi
 fi
 
-# 3) 完全离线（模型已在本地）
-export HF_HUB_OFFLINE=1
+# 3) 默认完全离线（模型已在本地）；首次在新机器上下载模型时：
+#    HF_HUB_OFFLINE=0 ./run.sh
+export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 export TOKENIZERS_PARALLELISM=false
 
 cd "$DIR"

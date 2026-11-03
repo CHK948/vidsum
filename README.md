@@ -19,6 +19,43 @@
 ./run.sh --port 9000    # 换端口
 ```
 
+## 从零部署（新机器）
+
+**1) 系统依赖**（Ubuntu/Debian 示例）：
+
+```bash
+sudo apt install ffmpeg \
+  texlive-latex-base texlive-latex-extra texlive-fonts-recommended \
+  texlive-xetex texlive-lang-chinese texlive-extra-utils \
+  fonts-arphic-ukai        # 公式渲染（本地 LaTeX，无外部服务）
+```
+> 公式渲染为可选：不装 LaTeX 时总结正常，公式以源码形式显示。
+
+**2) Python 依赖**（建议 conda/venv，Python ≥ 3.10）：
+
+```bash
+pip install -r requirements.txt
+# GPU 加速转写（可选，需 NVIDIA 驱动）：
+pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
+```
+
+**3) 首次下载 ASR 模型**（约 3GB，之后完全离线运行）：
+
+```bash
+HF_HUB_OFFLINE=0 ./run.sh
+# 或手动预下载：
+python -c "from huggingface_hub import snapshot_download; snapshot_download('Systran/faster-whisper-large-v3')"
+```
+
+**4) 配置 API Key**：
+
+```bash
+cp config.example.json config.json   # 编辑 api_key（智谱 open.bigmodel.cn 申请）
+```
+（也可启动后在网页 ⚙ 设置里粘贴）
+
+**5) 启动**：`./run.sh` → 打开 http://127.0.0.1:8322
+
 首次打开页面 → 右上角 **⚙ 设置** → 粘贴智谱 API Key（open.bigmodel.cn）→ **测试 GLM 连接** → 保存。
 
 然后：选择音视频文件 → 语言/风格 → **开始转写并总结**。
