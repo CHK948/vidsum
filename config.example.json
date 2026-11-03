@@ -1,0 +1,26 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8322
+  },
+  "asr": {
+    "model": "faster-whisper-large-v3",
+    "device": "auto",
+    "compute_type": "auto",
+    "vad_filter": true,
+    "beam_size": 5,
+    "initial_prompt": ""
+  },
+  "llm": {
+    "api_key": "在这里粘贴你的智谱 API Key（open.bigmodel.cn 申请）",
+    "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+    "model": "glm-5.3-flash",
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "timeout": 600,
+    "max_retries": 3,
+    "chunk_chars": 6000,
+    "max_workers": 2
+  },
+  "outputs_dir": "outputs"
+}

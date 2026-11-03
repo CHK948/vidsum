@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VidSum · 视频语音转写与总结</title>
+<style>
+:root{
+  --bg:#f5f6f8; --card:#ffffff; --bg3:#f1f3f6; --line:#e5e9ef; --line2:#d8dee6;
+  --fg:#1c222b; --fg2:#5d6875; --fg3:#98a1ac;
+  --acc:#0ea36b; --acc-soft:#e5f6ee; --acc2:#0b7ec2; --acc2-soft:#e7f2fb;
+  --warn:#b7791f; --warn-soft:#fdf3e0;
+  --err:#d44747; --err-soft:#fdecec;
+  --radius:12px; --mono:ui-monospace,"JetBrains Mono","Cascadia Code",Consolas,monospace;
+  --shadow:0 1px 2px rgba(16,24,40,.05),0 1px 3px rgba(16,24,40,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);font:14px/1.6 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh}
+a{color:var(--acc2);text-decoration:none}
+button{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line2);border-radius:8px;padding:6px 14px;cursor:pointer;transition:.15s}
+button:hover{border-color:var(--acc);color:var(--acc)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+button.primary:hover{filter:brightness(1.06);color:#fff}
+button.danger:hover{border-color:var(--err);color:var(--err)}
+input,select,textarea{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line2);border-radius:8px;padding:7px 10px;width:100%;outline:none;transition:.15s}
+input:focus,select:focus,textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(14,163,107,.12)}
+textarea{resize:vertical}
+label{display:block;font-size:12px;color:var(--fg2);margin:10px 0 4px}
+.row{display:flex;gap:8px}
+.grow{flex:1}
+
+header{display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:5}
+header h1{font-size:17px;font-weight:700;letter-spacing:.3px}
+header h1 em{color:var(--acc);font-style:normal}
+.sysline{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.badge{font-size:12px;color:var(--fg2);background:var(--bg3);border:1px solid var(--line);border-radius:20px;padding:2px 10px}
+.badge.ok{color:#0b7d54;background:var(--acc-soft);border-color:#bfe8d6}
+.badge.bad{color:var(--err);background:var(--err-soft);border-color:#f3c1c1}
+
+main{display:grid;grid-template-columns:360px 1fr;gap:16px;padding:16px 20px;max-width:1400px;margin:0 auto}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:16px}
+.card h2{font-size:13px;font-weight:700;color:var(--fg2);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+
+#jobList .jitem{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:.15s;background:var(--card)}
+#jobList .jitem:hover{border-color:var(--acc);box-shadow:var(--shadow)}
+#jobList .jitem.active{border-color:var(--acc);background:var(--acc-soft)}
+.jitem .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jitem .m{font-size:12px;color:var(--fg3);display:flex;gap:8px;margin-top:2px;align-items:center}
+.st{font-size:11px;border-radius:4px;padding:0 6px;font-weight:600}
+.st.queued{background:var(--acc2-soft);color:var(--acc2)}
+.st.extracting,.st.transcribing,.st.summarizing{background:var(--acc-soft);color:#0b7d54}
+.st.done{background:var(--acc);color:#fff}
+.st.error{background:var(--err-soft);color:var(--err)}
+.st.cancelled{background:var(--bg3);color:var(--fg2)}
+.minibar{height:3px;background:var(--bg3);border-radius:2px;margin-top:6px;overflow:hidden}
+.minibar i{display:block;height:100%;background:var(--acc);width:0%;transition:width .5s}
+
+#detail .head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+#detail .head h2{font-size:17px;color:var(--fg);text-transform:none;letter-spacing:0;margin:0}
+#detail .path{font-size:12px;color:var(--fg3);font-family:var(--mono);word-break:break-all}
+.progwrap{margin:14px 0 4px}
+.progbar{height:8px;background:var(--bg3);border-radius:4px;overflow:hidden}
+.progbar i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--acc),#3fc98f);transition:width .4s;border-radius:4px}
+.stageinfo{display:flex;justify-content:space-between;font-size:12px;color:var(--fg2);margin-top:5px}
+
+#asrLive{display:none;align-items:center;gap:10px;margin:10px 0 8px;padding:8px 12px;background:var(--acc-soft);border:1px solid #bfe8d6;border-radius:8px;font-size:12.5px;color:#0b6b48}
+#asrLive .dot{width:8px;height:8px;border-radius:50%;background:var(--acc);animation:pulse 1.2s infinite;flex:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+#asrLive .speed{font-weight:700;font-family:var(--mono);white-space:nowrap}
+#asrLive .last{color:var(--fg2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;font-family:var(--mono);font-size:12px}
+
+.errbox{background:var(--err-soft);border:1px solid #f3c1c1;border-radius:8px;padding:10px 12px;color:#a33; margin:10px 0;white-space:pre-wrap;font-size:13px}
+.reqbox{background:var(--acc2-soft);border:1px solid #c5dff2;border-radius:8px;padding:8px 12px;color:#0a5e92;margin:10px 0;font-size:13px}
+.reqbox b{color:var(--acc2)}
+
+.tabs{display:flex;gap:4px;margin:14px 0 0;border-bottom:1px solid var(--line)}
+.tabs button{border:none;border-radius:8px 8px 0 0;background:transparent;color:var(--fg2);padding:7px 14px}
+.tabs button:hover{color:var(--acc);background:var(--bg3)}
+.tabs button.active{background:var(--bg3);color:var(--fg);font-weight:600}
+.tabs button:disabled{opacity:.4}
+.restool{display:none;align-items:center;gap:6px;margin-top:12px}
+.restool .vlabel{font-size:12px;color:var(--fg3);margin-right:2px}
+.restool button{padding:4px 12px;font-size:12.5px;border-radius:7px}
+.restool button.active{background:var(--acc-soft);border-color:var(--acc);color:#0b7d54;font-weight:600}
+.res{background:var(--card);border:1px solid var(--line);border-top:none;border-radius:0 0 10px 10px;padding:16px;max-height:540px;overflow:auto}
+.res.pre{font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;word-break:break-all;color:#3d4a57}
+.res .md h1,.res .md h2,.res .md h3{margin:14px 0 8px;color:var(--fg)}
+.res .md h1{font-size:18px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.res .md h2{font-size:16px}.res .md h3{font-size:14px;color:var(--acc2)}
+.res .md p{margin:6px 0}
+.res .md ul{margin:6px 0 6px 20px}
+.res .md li{margin:3px 0}
+.res .md .ts{color:var(--acc);font-family:var(--mono);font-size:12px;font-weight:600}
+.res .md code{background:var(--bg3);border-radius:4px;padding:1px 5px;font-family:var(--mono);font-size:12px}
+.res .md blockquote{border-left:3px solid var(--acc);padding:2px 10px;color:var(--fg2);margin:8px 0}
+.mathwrap.inline{display:inline-block;vertical-align:middle;margin:0 1px}
+.mathwrap.inline .eq-inline{vertical-align:middle}
+.mathwrap.block{display:block;text-align:center;margin:10px 0;overflow-x:auto}
+.mathwrap.block .eq-block{max-width:100%;height:auto}.math-fallback{color:var(--err);font-family:var(--mono)}
+.mdtable{border-collapse:collapse;margin:10px 0;font-size:13px;width:100%}
+.mdtable th,.mdtable td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
+.mdtable th{background:var(--bg3);font-weight:600}
+.mdtable tbody tr:nth-child(even){background:var(--bg3)}
+.codeblock{background:#f8fafb;border:1px solid var(--line);border-radius:8px;padding:10px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-all;color:#41505f;overflow-x:auto}
+.dlrow{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+
+.modal{position:fixed;inset:0;background:rgba(23,30,40,.35);display:none;align-items:center;justify-content:center;z-index:50}
+.modal.open{display:flex}
+.mbox{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 40px rgba(16,24,40,.15);width:min(760px,94vw);max-height:88vh;display:flex;flex-direction:column}
+.mbox header2{padding:14px 18px;border-bottom:1px solid var(--line);font-weight:700;display:flex;justify-content:space-between;align-items:center}
+.mbox .mbody{padding:16px 18px;overflow:auto}
+.mbox .mfoot{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+#fileDlg{width:min(880px,96vw);height:min(600px,86vh);padding:0}
+#fileDlg header2{padding:12px 16px}
+.fdlg-body{display:grid;grid-template-columns:170px 1fr;height:100%;min-height:0}
+.fdlg-side{background:var(--bg3);border-right:1px solid var(--line);padding:8px 6px;overflow-y:auto}
+.fdlg-side div{padding:7px 10px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fdlg-side div:hover{background:rgba(14,163,107,.12)}
+.fdlg-side div.cur{background:var(--acc-soft);color:#0b7d54;font-weight:600}
+.fdlg-main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.fdlg-bar{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.fdlg-bar button{padding:4px 10px;font-size:13px}
+.fdlg-crumbs{flex:1;display:flex;align-items:center;overflow-x:auto;white-space:nowrap;background:var(--bg3);border:1px solid var(--line);border-radius:7px;padding:3px 8px;font-size:12.5px;scrollbar-width:thin}
+.fdlg-crumbs a{color:var(--fg2);cursor:pointer;padding:1px 4px;border-radius:4px}
+.fdlg-crumbs a:hover{background:var(--acc-soft);color:#0b7d54}
+.fdlg-crumbs .sep{color:var(--fg3);margin:0 1px}
+.fdlg-crumbs .here{color:var(--fg);font-weight:600;padding:1px 4px}
+.fdlg-list{flex:1;overflow-y:auto;min-height:0}
+.fdlg-head,.frow{display:grid;grid-template-columns:1fr 92px 118px;gap:8px;align-items:center;padding:5px 12px}
+.fdlg-head{position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--line);font-size:11.5px;color:var(--fg3);z-index:1}
+.fdlg-head .r{text-align:right}
+.frow{cursor:default;font-size:13px;border-bottom:1px solid #f2f4f7}
+.frow:hover{background:var(--bg3)}
+.frow.sel{background:var(--acc-soft);box-shadow:inset 2px 0 0 var(--acc)}
+.frow .nm{display:flex;gap:7px;align-items:center;min-width:0}
+.frow .nm span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow.dir .nm{color:var(--acc2);font-weight:500}
+.frow.media .nm{color:var(--fg)}
+.frow.other .nm{color:var(--fg3)}
+.frow.pickable{cursor:pointer}
+.frow .sz,.frow .mt{font-family:var(--mono);font-size:11.5px;color:var(--fg3);text-align:right;white-space:nowrap}
+.fdlg-foot{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--line)}
+.fdlg-foot .picked{flex:1;font-size:12.5px;color:var(--fg2);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hint{font-size:12px;color:var(--fg3)}
+.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+@media(max-width:640px){.formgrid{grid-template-columns:1fr}}
+.testout{font-family:var(--mono);font-size:12px;margin-top:8px;white-space:pre-wrap}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--acc);color:var(--fg);border-radius:8px;padding:8px 18px;z-index:99;display:none;box-shadow:var(--shadow)}
+.empty{text-align:center;color:var(--fg3);padding:40px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>Vid<em>Sum</em> · 视频语音转写与总结</h1>
+  <div class="sysline" id="sysline"></div>
+  <button onclick="openSettings()">⚙ 设置</button>
+</header>
+
+<main>
+  <section>
+    <div class="card">
+      <h2>新建任务</h2>
+      <label>音视频文件路径</label>
+      <div class="row">
+        <input id="mediaPath" class="grow" placeholder="/home/.../video.mp4 或 .ts" spellcheck="false">
+        <button onclick="openBrowser()">浏览</button>
+      </div>
+      <div class="formgrid">
+        <div>
+          <label>语音语言</label>
+          <select id="lang">
+            <option value="auto">自动检测</option>
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+          </select>
+        </div>
+        <div>
+          <label>总结风格</label>
+          <select id="style">
+            <option value="course">课程笔记</option>
+            <option value="general">内容总结</option>
+            <option value="meeting">会议纪要</option>
+            <option value="lecture_tech">技术讲座</option>
+          </select>
+        </div>
+      </div>
+      <label>对这份总结的要求（可选，针对本视频）</label>
+      <textarea id="extraReq" rows="2" placeholder="例如：重点记录公式与定理证明过程；列出片中提到的所有影片；只整理与考点相关的内容…"></textarea>
+      <div style="margin-top:14px;text-align:right">
+        <button class="primary" id="btnStart" onclick="startJob()">▶ 开始转写并总结</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>任务列表</h2>
+      <div id="jobList"></div>
+    </div>
+  </section>
+
+  <section id="detail" class="card" style="display:none">
+    <div class="head"><h2 id="dTitle"></h2><span id="dStatus" class="st"></span></div>
+    <div class="path" id="dPath"></div>
+    <div class="progwrap">
+      <div class="progbar"><i id="dBar"></i></div>
+      <div class="stageinfo"><span id="dStage"></span><span id="dPct"></span></div>
+    </div>
+    <div class="errbox" id="dErr" style="display:none"></div>
+    <div class="reqbox" id="dReq" style="display:none"></div>
+    <div id="asrLive"><span class="dot"></span><span class="speed" id="asrSpeed"></span><span class="last" id="asrText"></span></div>
+    <div style="display:flex;gap:8px;margin:10px 0">
+      <button id="btnCancel" onclick="jobAction('cancel')">■ 取消</button>
+      <button id="btnResume" onclick="jobAction('resume')" style="display:none">↻ 从断点继续</button>
+      <button class="danger" id="btnDelete" onclick="deleteJob()">🗑 删除任务</button>
+      <span class="hint" style="margin-left:auto;align-self:center" id="dMeta"></span>
+    </div>
+    <div class="tabs">
+      <button id="tab-summary.md" onclick="showRes('summary.md',this)">📋 总结</button>
+      <button id="tab-transcript.txt" onclick="showRes('transcript.txt',this)">📝 转写全文</button>
+      <button id="tab-transcript.srt" onclick="showRes('transcript.srt',this)">🎬 字幕 SRT</button>
+    </div>
+    <div class="restool" id="restool">
+      <span class="vlabel">视图</span>
+      <button id="vwRender" class="active" onclick="setView('render')">渲染</button>
+      <button id="vwSource" onclick="setView('source')">Markdown 源码</button>
+      <button onclick="copyMd()" style="margin-left:auto">⧉ 复制源码</button>
+    </div>
+    <div class="res" id="resBox"><div class="empty">完成后可在此查看结果</div></div>
+    <div class="dlrow" id="dlRow"></div>
+  </section>
+</main>
+
+<!-- 目录浏览（类系统文件选择器） -->
+<div class="modal" id="mBrowse">
+  <div class="mbox" id="fileDlg">
+    <header2><span>选择音视频文件</span><button onclick="closeModal('mBrowse')">✕</button></header2>
+    <div class="fdlg-body">
+      <div class="fdlg-side" id="fdlgSide"></div>
+      <div class="fdlg-main">
+        <div class="fdlg-bar">
+          <button id="fdlgBack" onclick="browseBack()" title="后退">←</button>
+          <button onclick="browseUp()" title="上一级">↑</button>
+          <div class="fdlg-crumbs" id="fdlgCrumbs"></div>
+          <button onclick="browseGo(browseDir,false)" title="刷新">⟳</button>
+        </div>
+        <div class="fdlg-list" id="fdlgList">
+          <div class="fdlg-head"><div>名称</div><div class="r">大小</div><div class="r">修改时间</div></div>
+        </div>
+        <div class="fdlg-foot">
+          <span class="picked" id="pickName">双击文件夹进入；单击选择音视频文件</span>
+          <button onclick="closeModal('mBrowse')">取消</button>
+          <button class="primary" id="btnPick" onclick="pickFile()" disabled>打开</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 设置 -->
+<div class="modal" id="mSettings">
+  <div class="mbox">
+    <header2><span>设置</span><button onclick="closeModal('mSettings')">✕</button></header2>
+    <div class="mbody">
+      <h2 style="color:var(--acc2);font-size:13px">GLM 大模型（智谱）</h2>
+      <label>API Key（留空或含 **** 表示不修改）</label>
+      <input id="sKey" type="password" placeholder="粘贴智谱 open.bigmodel.cn 的 API Key">
+      <div class="formgrid">
+        <div><label>模型</label><input id="sModel" placeholder="glm-5.3-flash"></div>
+        <div><label>接口地址</label><input id="sBase" placeholder="https://open.bigmodel.cn/api/paas/v4"></div>
+        <div><label>temperature</label><input id="sTemp" type="number" step="0.1" min="0" max="2"></div>
+        <div><label>分块字符数（长视频分块总结）</label><input id="sChunk" type="number" min="1000" step="500"></div>
+        <div><label>总结并发数</label><input id="sWorkers" type="number" min="1" max="8"></div>
+        <div><label>单次请求超时（秒）</label><input id="sTimeout" type="number" min="60"></div>
+      </div>
+      <div style="margin-top:10px"><button onclick="testLLM()">🔍 测试 GLM 连接</button><div class="testout" id="testOut"></div></div>
+
+      <h2 style="color:var(--acc2);font-size:13px;margin-top:22px">本地 ASR（faster-whisper）</h2>
+      <div class="formgrid">
+        <div><label>模型（本地已缓存）</label><input id="sAsrModel" list="modelList"><datalist id="modelList"></datalist></div>
+        <div><label>计算设备</label><select id="sDevice"><option value="auto">自动（GPU 优先）</option><option value="cuda">CUDA GPU</option><option value="cpu">CPU</option></select></div>
+        <div><label>采样束宽 beam_size</label><input id="sBeam" type="number" min="1" max="10"></div>
+        <div><label>VAD 静音过滤</label><select id="sVad"><option value="1">开启（更快）</option><option value="0">关闭</option></select></div>
+        <div style="grid-column:1/-1"><label>initial_prompt（可选，提示热词/术语，帮助识别专有名词）</label><input id="sPrompt" placeholder="例如：电影史、蒙太奇、法国新浪潮…"></div>
+      </div>
+      <p class="hint" style="margin-top:10px">修改后立即保存到 config.json；ASR 模型修改对下一个任务生效。</p>
+    </div>
+    <div class="mfoot">
+      <button onclick="closeModal('mSettings')">取消</button>
+      <button class="primary" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+let CFG=null, SYS=null, JOBS=[], CUR=null, evNext=0, resCache={}, pollT=null, resView='render', curRes=null;
+
+async function api(path, opts){
+  const r=await fetch(path,opts);
+  const j=await r.json().catch(()=>({error:'响应解析失败'}));
+  if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+  return j;
+}
+function toast(msg,ok=true){const t=$('toast');t.textContent=msg;t.style.borderColor=ok?'var(--acc)':'var(--err)';t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',2600);}
+function fmtSize(n){const u=['B','KB','MB','GB','TB'];let i=0;while(n>=1024&&i<4){n/=1024;i++}return n.toFixed(i?1:0)+u[i]}
+function fmtTime(ts){if(!ts)return '';const d=new Date(ts*1000);return d.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}
+function fmtRemain(s){if(s==null)return '';if(s<90)return Math.round(s)+' 秒';if(s<5400)return Math.round(s/60)+' 分钟';return (s/3600).toFixed(1)+' 小时'}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+/* ---------------- system & config ---------------- */
+async function loadSys(){
+  SYS=await api('/api/system');
+  const badges=[
+    `<span class="badge ${SYS.device.includes('CUDA')?'ok':''}">${SYS.device.startsWith('CUDA')?'⚡ '+SYS.device:'🖥 '+SYS.device}</span>`,
+    `<span class="badge">ASR: ${SYS.asr_model||'-'}</span>`,
+    `<span class="badge">GLM: ${SYS.llm_model||'-'}</span>`,
+    `<span class="badge ${SYS.has_key?'ok':'bad'}">${SYS.has_key?('🔑 '+SYS.key_masked):'⚠ 未配置 API Key'}</span>`,
+  ].join('');
+  $('sysline').innerHTML=badges;
+  $('modelList').innerHTML=(SYS.models||[]).map(m=>`<option value="${m}">`).join('');
+}
+async function openSettings(){
+  CFG=await api('/api/config');
+  $('sKey').value=''; $('sKey').placeholder=CFG.llm.api_key?('已配置 '+CFG.llm.api_key):'粘贴智谱 API Key';
+  $('sModel').value=CFG.llm.model; $('sBase').value=CFG.llm.base_url;
+  $('sTemp').value=CFG.llm.temperature; $('sChunk').value=CFG.llm.chunk_chars;
+  $('sWorkers').value=CFG.llm.max_workers; $('sTimeout').value=CFG.llm.timeout;
+  $('sAsrModel').value=CFG.asr.model; $('sDevice').value=CFG.asr.device;
+  $('sBeam').value=CFG.asr.beam_size; $('sVad').value=CFG.asr.vad_filter?'1':'0';
+  $('sPrompt').value=CFG.asr.initial_prompt||'';
+  $('mSettings').classList.add('open');
+}
+async function saveSettings(){
+  try{
+    const body={llm:{model:$('sModel').value.trim(),base_url:$('sBase').value.trim(),
+      temperature:parseFloat($('sTemp').value)||0.6, chunk_chars:parseInt($('sChunk').value)||6000,
+      max_workers:parseInt($('sWorkers').value)||2, timeout:parseInt($('sTimeout').value)||600},
+      asr:{model:$('sAsrModel').value.trim(),device:$('sDevice').value,
+      beam_size:parseInt($('sBeam').value)||5, vad_filter:$('sVad').value==='1',
+      initial_prompt:$('sPrompt').value.trim()}};
+    const k=$('sKey').value.trim(); if(k) body.llm.api_key=k;
+    await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    toast('设置已保存'); closeModal('mSettings'); loadSys();
+  }catch(e){toast('保存失败: '+e.message,false)}
+}
+async function testLLM(){
+  $('testOut').textContent='测试中 …（模型带思考模式，可能需要十几秒）';
+  try{const r=await api('/api/test-llm',{method:'POST'});
+    $('testOut').innerHTML=r.ok?`<span style="color:var(--acc)">✓ 连接正常，模型 ${r.model} 回复：${r.reply}</span>`
+      :`<span style="color:var(--err)">✗ ${r.error}</span>`;
+  }catch(e){$('testOut').innerHTML=`<span style="color:var(--err)">✗ ${e.message}</span>`}
+}
+
+/* ---------------- browse（类系统文件选择器） ---------------- */
+let browseSel='', browseDir='', browseHist=[], browseIdx=-1;
+function openBrowser(){
+  const seed=$('mediaPath').value.trim();
+  $('mBrowse').classList.add('open'); browseSel='';
+  $('btnPick').disabled=true; $('pickName').textContent='双击文件夹进入；单击选择音视频文件';
+  if(seed){ browseGo(dirname(seed)||'/', true, seed); }
+  else if(browseDir){ browseGo(browseDir, false); }
+  else { browseGo(SYS.home||'/', true); }
+}
+function dirname(p){const i=p.lastIndexOf('/');return i>0?p.slice(0,i):'/'}
+async function browseGo(p, pushHist=true, preselect=null){
+  try{
+    const d=await api('/api/browse?path='+encodeURIComponent(p));
+    if(pushHist!==false){
+      browseHist=browseHist.slice(0,browseIdx+1); browseHist.push(d.path);
+      browseIdx=browseHist.length-1;
+    }
+    $('fdlgBack').disabled=(browseIdx<=0);
+    renderFileDlg(d, preselect);
+  }catch(e){ toast(e.message,false) }
+}
+function browseBack(){ if(browseIdx>0){ browseIdx--; browseGo(browseHist[browseIdx], false) } }
+function browseUp(){ if(browseDir!=='/') browseGo(dirname(browseDir), false) }
+function renderFileDlg(d, preselect=null){
+  browseDir=d.path;
+  // 侧栏快速位置
+  const side=$('fdlgSide'); side.innerHTML='';
+  for(const s of d.special||[]){
+    const el=document.createElement('div');
+    el.textContent=s.label;
+    if(s.path===d.path) el.classList.add('cur');
+    el.onclick=()=>browseGo(s.path);
+    side.appendChild(el);
+  }
+  // 面包屑
+  const cr=$('fdlgCrumbs'); cr.innerHTML='';
+  const parts=d.path.split('/').filter(Boolean);
+  const mk=(label,path,here)=>{
+    if(here){const sp=document.createElement('span');sp.className='here';sp.textContent=label;cr.appendChild(sp)}
+    else{const a=document.createElement('a');a.textContent=label;a.onclick=()=>browseGo(path);cr.appendChild(a)}
+  };
+  mk('/', '/', parts.length>0);
+  let acc='';
+  parts.forEach((p,i)=>{
+    acc+='/'+p;
+    const sep=document.createElement('span'); sep.className='sep'; sep.textContent='/'; cr.appendChild(sep);
+    mk(p, acc, i===parts.length-1);
+  });
+  cr.scrollTop=cr.scrollWidth;
+  // 文件列表
+  const box=$('fdlgList');
+  [...box.querySelectorAll('.frow')].forEach(x=>x.remove());
+  let empty=true;
+  for(const dir of d.dirs){
+    empty=false;
+    const el=document.createElement('div'); el.className='frow dir';
+    el.innerHTML=`<div class="nm">📁 <span>${dir.name}</span></div><div class="sz">—</div><div class="mt">${fmtTime(dir.mtime)}</div>`;
+    el.classList.add('pickable');
+    el.ondblclick=()=>browseGo(d.path+'/'+dir.name);
+    box.appendChild(el);
+  }
+  for(const f of d.files){
+    empty=false;
+    const el=document.createElement('div'); el.className='frow '+(f.media?'media':'other');
+    el.innerHTML=`<div class="nm">${f.media?'🎬':'📄'} <span>${f.name}</span></div><div class="sz">${f.media?fmtSize(f.size):''}</div><div class="mt">${fmtTime(f.mtime)}</div>`;
+    if(f.media){
+      el.classList.add('pickable');
+      el.onclick=()=>selectFile(d.path+'/'+f.name, el);
+      el.ondblclick=()=>{ browseSel=d.path+'/'+f.name; pickFile(); };
+    }
+    if(preselect && d.path+'/'+f.name===preselect){ selectFile(d.path+'/'+f.name, el); el.scrollIntoView({block:'center'}) }
+    box.appendChild(el);
+  }
+  if(empty) box.insertAdjacentHTML('beforeend','<div class="empty">空目录</div>');
+}
+function selectFile(fullpath, el){
+  document.querySelectorAll('.frow.sel').forEach(x=>x.classList.remove('sel'));
+  el.classList.add('sel'); browseSel=fullpath; $('btnPick').disabled=false;
+  $('pickName').textContent='已选择：'+fullpath;
+}
+function pickFile(){ if(browseSel){ $('mediaPath').value=browseSel; closeModal('mBrowse'); } }
+function closeModal(id){$(id).classList.remove('open')}
+
+/* ---------------- jobs ---------------- */
+async function startJob(){
+  const p=$('mediaPath').value.trim();
+  if(!p) return toast('请先选择音视频文件',false);
+  $('btnStart').disabled=true;
+  try{
+    const r=await api('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({path:p,language:$('lang').value,style:$('style').value,
+                           extra_request:$('extraReq').value.trim()})});
+    toast('任务已创建'); $('mediaPath').value=''; $('extraReq').value='';
+    await refreshJobs(); selectJob(r.job.id);
+  }catch(e){toast('创建失败: '+e.message,false)}
+  finally{$('btnStart').disabled=false}
+}
+function weight(st,p){ // 各阶段 -> 总进度
+  if(st==='done')return 1; if(st==='error'||st==='cancelled')return 0;
+  if(st==='extracting')return .02+p*.03;
+  if(st==='transcribing')return .05+p*.60;
+  if(st==='summarizing')return .65+p*.33;
+  return 0;
+}
+async function refreshJobs(){
+  try{
+    const r=await api('/api/jobs'); JOBS=r.jobs;
+    const box=$('jobList');
+    if(!JOBS.length){box.innerHTML='<div class="empty">暂无任务<br><span class="hint">选择一个视频开始吧</span></div>';return}
+    box.innerHTML='';
+    for(const j of JOBS){
+      const el=document.createElement('div');el.className='jitem'+(CUR===j.id?' active':'');
+      const pct=Math.round(weight(j.stage,j.progress)*100);
+      const eta=(j.status==='running'&&j.eta>0)?('剩 '+fmtRemain(j.eta)):'';
+      el.innerHTML=`<div class="t">${esc(j.title)}</div>
+        <div class="m"><span class="st ${j.stage}">${j.stage_label}</span><span>${fmtTime(j.created)}</span><span style="margin-left:auto">${j.status==='done'?'✓':(eta||pct+'%')}</span></div>
+        <div class="minibar"><i style="width:${j.status==='done'?100:pct}%"></i></div>`;
+      el.onclick=()=>selectJob(j.id);
+      box.appendChild(el);
+    }
+    if(CUR&&JOBS.some(j=>j.id===CUR)) updateMeta();
+    else if(!CUR&&JOBS.length){selectJob(JOBS[0].id)}
+  }catch(e){}
+}
+function updateMeta(){ /* 由 pollDetail 统一刷新，列表轮询不再重复请求 */ }
+function selectJob(id){
+  CUR=id; evNext=0; resCache={}; resView='render'; curRes='summary.md';
+  $('vwRender').classList.add('active'); $('vwSource').classList.remove('active');
+  $('restool').style.display='none';
+  $('asrLive').style.display='none';
+  $('detail').style.display='block';
+  ['summary.md','transcript.txt','transcript.srt'].forEach((n,i)=>{
+    const b=$('tab-'+n); b.disabled=true;
+    if(i===0){b.classList.add('active'); $('resBox').innerHTML='<div class="empty">完成后可在此查看结果</div>'; $('resBox').className='res'}
+    else b.classList.remove('active');
+  });
+  $('dlRow').innerHTML='';
+  refreshJobs(); pollDetail();
+}
+async function pollDetail(){
+  if(!CUR) return;
+  clearTimeout(pollT);
+  try{
+    const j=await api(`/api/jobs/${CUR}?after=${evNext}`);
+    for(const ev of j.events||[]){
+      if(ev.type!=='live') continue;  // 运行日志不再展示，仅处理 ASR 实时状态
+      const box=$('asrLive');
+        if(j.stage==='transcribing'||j.status==='running'){
+          box.style.display='flex';
+          $('asrSpeed').textContent=`${ev.speed}x 实时 · ${ev.pct}% · 剩余约 ${fmtRemain(ev.remain)}`;
+          $('asrText').textContent='“'+ev.text+'”';
+        }
+    }
+    evNext=j.next||evNext;
+    $('dTitle').textContent=j.title; $('dPath').textContent=j.media_path;
+    const st=$('dStatus'); st.textContent=j.stage_label; st.className='st '+j.stage;
+    const pct=Math.round(weight(j.stage,j.progress)*100);
+    $('dBar').style.width=(j.status==='done'?100:pct)+'%';
+    $('dPct').textContent=(j.status==='done'?'100%':pct+'%')+
+      (j.status==='running'&&j.eta>0?(' · 剩约 '+fmtRemain(j.eta)):'');
+    $('dStage').textContent=j.status==='running'?('阶段：'+j.stage_label):(j.status==='done'?'全部完成':'');
+    if(j.stage!=='transcribing') $('asrLive').style.display='none';
+    $('dErr').style.display=j.error?'block':'none'; $('dErr').textContent=j.error;
+    const ex=(j.params&&j.params.extra_request)||'';
+    $('dReq').style.display=ex?'block':'none';
+    $('dReq').innerHTML=ex?`<b>本任务附加要求：</b>${esc(ex)}`:'';
+    $('dMeta').textContent=(j.started?('开始 '+fmtTime(j.started)):'')+(j.finished?(' · 用时 '+Math.round(j.finished-j.started)+'s'):'');
+    $('btnCancel').style.display=(j.status==='running'||j.status==='queued')?'':'none';
+    const canResume=(j.status==='error'||j.status==='cancelled'||j.status==='done');
+    $('btnResume').style.display=canResume?'':'none';
+    $('btnResume').textContent=(j.status==='done')?'↻ 重新总结（用当前设置）':'↻ 从断点继续';
+    for(const [n,ok] of Object.entries(j.files||{})){
+      const b=$('tab-'+n); if(b) b.disabled=!ok;
+    }
+    if(j.status==='done'&&resCache[ck('summary.md',true)]===undefined&&!resCache._loading){showRes('summary.md',$('tab-summary.md'))}
+    $('dlRow').innerHTML=Object.entries(j.files||{}).filter(([n,ok])=>ok&&n!=='transcript.json'&&n!=='audio.wav')
+      .map(([n])=>`<a href="/api/jobs/${j.id}/file?name=${n}" download><button>⬇ ${n}</button></a>`).join('');
+  }catch(e){}
+  pollT=setTimeout(pollDetail,CUR?800:999999);
+}
+function ck(name, html=false){ return (CUR||'none')+'|'+(html?'html:':'')+name; }
+function showRes(name,btn){
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  curRes=name;
+  ensureRes(name);
+}
+function ensureRes(name){
+  if(!CUR) return;
+  const htmlKey = (name==='summary.md' && resView==='render');
+  const key = ck(name, htmlKey);
+  if(resCache[key]!==undefined){renderRes(name);return}
+  $('restool').style.display='none';
+  const box=$('resBox');
+  box.className='res'; box.innerHTML='<div class="empty">加载中 …<br><span class="hint">渲染视图首次需调用本地 LaTeX 编译公式，可能需要十几秒</span></div>';
+  resCache._loading=key;
+  const url = htmlKey ? `/api/jobs/${CUR}/result-html?name=${name}` : `/api/jobs/${CUR}/result?name=${name}`;
+  api(url).then(r=>{
+    resCache[key] = (r.html!==undefined) ? r.html : r.content;
+    if(resCache._loading===key) renderRes(name);
+  }).catch(e=>{
+    if(resCache._loading===key) box.innerHTML=`<div class="empty">${e.message.includes('尚未')?'该文件尚未生成':'加载失败: '+e.message}</div>`;
+  }).finally(()=>{if(resCache._loading===key) delete resCache._loading});
+}
+function setView(v){
+  resView=v;
+  $('vwRender').classList.toggle('active',v==='render');
+  $('vwSource').classList.toggle('active',v==='source');
+  if(curRes==='summary.md') ensureRes('summary.md');
+}
+async function copyMd(){
+  try{
+    let c=resCache[ck('summary.md')];
+    if(c===undefined){c=(await api(`/api/jobs/${CUR}/result?name=summary.md`)).content;resCache[ck('summary.md')]=c}
+    await navigator.clipboard.writeText(c);toast('已复制 Markdown 源码')
+  }catch(e){toast('复制失败：'+e.message,false)}
+}
+function renderRes(name){
+  const box=$('resBox');
+  if(name==='summary.md'){
+    $('restool').style.display='flex';
+    if(resView==='render'){
+      const h=resCache[ck('summary.md',true)];
+      if(h!==undefined){box.className='res';box.innerHTML='<div class="md">'+h+'</div>';return}
+    }else{
+      const c=resCache[ck('summary.md')];
+      if(c!==undefined){box.className='res pre';box.textContent=c;return}
+    }
+  }else{
+    $('restool').style.display='none';
+    const c=resCache[ck(name)];
+    if(c!==undefined){box.className='res pre';box.textContent=c;return}
+  }
+  ensureRes(name);
+}
+async function jobAction(act){
+  if(!CUR)return;
+  if(act==='cancel'&&!confirm('确认取消该任务？'))return;
+  try{await api(`/api/jobs/${CUR}/${act}`,{method:'POST'});toast(act==='cancel'?'已请求取消':'已从断点恢复');refreshJobs()}
+  catch(e){toast(e.message,false)}
+}
+async function deleteJob(){
+  if(!CUR||!confirm('删除任务及其所有输出文件？'))return;
+  try{await api(`/api/jobs/${CUR}/delete`,{method:'POST'});CUR=null;$('detail').style.display='none';refreshJobs();toast('已删除')}
+  catch(e){toast(e.message,false)}
+}
+
+/* ---------------- boot ---------------- */
+loadSys().catch(()=>{});
+refreshJobs().then(()=>{ if(JOBS.length&&!CUR) selectJob(JOBS[0].id); });
+setInterval(refreshJobs,2500);
+setInterval(loadSys,30000);
+</script>
+</body>
+</html>
